@@ -633,20 +633,24 @@
                     container.classList.add('scale-100', 'opacity-100');
                 }, 10);
 
-                // Default Fallback
-                let videoSrc = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(title + ' official trailer')}&autoplay=1`;
-                
-                try {
-                    // Prefer IMDB ID lookup if available, else Title
-                    const videoId = await getTrailerVideoId(imdbID || title, imdbID ? 'imdb' : 'query');
-                    if (videoId) {
-                        videoSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
-                    }
-                } catch (e) {
-                    console.warn("Falling back to search embed");
-                }
-                
-                iframe.src = videoSrc;
+                // Default Fallback: open YouTube search
+let videoSrc = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' official trailer')}`;
+
+try {
+    const videoId = await getTrailerVideoId(imdbID || title, imdbID ? 'imdb' : 'query');
+    if (videoId) {
+        videoSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
+    }
+} catch (e) {
+    console.warn("Falling back to YouTube search");
+}
+
+// Set source + failback
+iframe.src = videoSrc;
+iframe.onerror = () => {
+    iframe.src = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' official trailer')}`;
+};
+
             } else {
                 container.classList.remove('scale-100', 'opacity-100');
                 container.classList.add('scale-95', 'opacity-0');
@@ -655,6 +659,7 @@
                     iframe.src = '';
                 }, 300);
             }
+            
         };
 
         window.handleAiDeepDive = async (title) => {
