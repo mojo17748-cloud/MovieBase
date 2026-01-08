@@ -276,6 +276,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        const YT_KEY = "AIzaSyCMAmeVxQLGT37vS6G4iIc2vNE6SDtIdsg";
         const TMDB_KEY = "c35578514ce47f1bf11cabb3c93cc6a0";
         const OMDB_API_KEY = "fd749bd1";
         const GEMINI_API_KEY = "AIzaSyA0FBoGCUsuzRl8OVSx2vbTJsc5Sa-sWq8";
@@ -576,100 +577,99 @@
         };
 
         // --- TRAILER FETCH HELPER ---
-        async function getTrailerVideoId(term, type = 'query') {
-            try {
-                let movieId = null;
+        // 🔥 Fetch YouTube Trailer by Title (first official-best match)
+async function getYouTubeTrailer(term) {
+    try {
+        const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(term + " official trailer")}&type=video&key=${YT_KEY}&maxResults=1`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("YT Search Failed");
+        const data = await res.json();
+        if (data.items && data.items.length > 0) {
+            return data.items[0].id.videoId;
+        }
+        return null;
+    } catch (e) {
+        console.warn("YT API fallback", e.message);
+        return null;
+    }
+}
 
-                // 1. Try to find TMDB ID using IMDb ID (more accurate)
-                if (type === 'imdb' && term) {
-                     const findUrl = `https://api.themoviedb.org/3/find/${term}?api_key=${TMDB_KEY}&external_source=imdb_id`;
-                     const res = await fetch(findUrl);
-                     if(res.ok) {
-                         const data = await res.json();
-                         if (data.movie_results && data.movie_results.length > 0) {
-                             movieId = data.movie_results[0].id;
-                         }
-                     }
-                }
-                
-                // 2. Fallback to Title Search if no IMDb ID provided or lookup failed
-                if (!movieId) {
-                    const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(term)}`;
-                    const res = await fetch(searchUrl);
-                    if (!res.ok) throw new Error('TMDB Search Failed');
-                    const data = await res.json();
-                    if (!data.results || !data.results.length) return null;
-                    movieId = data.results[0].id;
-                }
+// 🔎 TMDB Trailer (IMDb → TMDB → YouTube)
+async function getTMDBTrailer(term, type = 'query') {
+    try {
+        let movieId = null;
 
-                if (!movieId) return null;
-
-                // 3. Get Videos for the Movie
-                const videoUrl = `https://api.themoviedb.org/3/movie/${movieId}/videos?api_key=${TMDB_KEY}`;
-                const videoRes = await fetch(videoUrl);
-                if (!videoRes.ok) throw new Error('TMDB Video Failed');
-                const videoData = await videoRes.json();
-
-                // 4. Filter for Youtube Trailer (Prefer 'Trailer', then 'Teaser', then any YouTube video)
-                const trailer = videoData.results.find(v => v.type === "Trailer" && v.site === "YouTube") 
-                             || videoData.results.find(v => v.type === "Teaser" && v.site === "YouTube")
-                             || videoData.results.find(v => v.site === "YouTube"); 
-                
-                return trailer ? trailer.key : null;
-            } catch (e) {
-                console.warn("Trailer fetch issue (using fallback):", e.message);
-                return null;
-            }
+        if (type === 'imdb' && term) {
+            const url = `https://api.themoviedb.org/3/find/${term}?api_key=${TMDB_KEY}&external_source=imdb_id`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.movie_results?.length) movieId = data.movie_results[0].id;
         }
 
-        window.toggleTrailer = async (show, title, imdbID) => {
-            const modal = document.getElementById('video-modal');
-            const container = document.getElementById('video-container');
-            const iframe = document.getElementById('video-iframe');
-            const titleEl = document.getElementById('video-title');
-            
-            if (show) {
-                // Show modal immediately for UI responsiveness
-                modal.classList.remove('hidden');
-                if(title) titleEl.innerText = title;
-                
-                // Animation
-                setTimeout(() => {
-                    container.classList.remove('scale-95', 'opacity-0');
-                    container.classList.add('scale-100', 'opacity-100');
-                }, 10);
+        if (!movieId) {
+            const url = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(term)}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            if (data.results?.length) movieId = data.results[0].id;
+        }
 
-                // Try to get video ID
-                try {
-                    const videoId = await getTrailerVideoId(imdbID || title, imdbID ? 'imdb' : 'query');
-                    
-                    if (videoId) {
-                        // Success: Play Video
-                        iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
-                    } else {
-                        // Failure: Throw to catch block
-                        throw new Error("No trailer found");
-                    }
-                } catch (e) {
-                    console.warn("Falling back to YouTube Search:", e.message);
-                    
-                    // Close the modal as we are leaving the app context
-                    toggleTrailer(false);
-                    
-                    // Redirect to YouTube Search
-                    const query = encodeURIComponent((title || "") + " official trailer");
-                    window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank');
-                }
-            } else {
-                // Close Logic
-                container.classList.remove('scale-100', 'opacity-100');
-                container.classList.add('scale-95', 'opacity-0');
-                setTimeout(() => {
-                    modal.classList.add('hidden');
-                    iframe.src = '';
-                }, 300);
-            }
-        };
+        if (!movieId) return null;
+
+        const videoUrl = `https://api.themoviedb.org/3/movie/${movieId}/videos?api_key=${TMDB_KEY}`;
+        const videoRes = await fetch(videoUrl);
+        const videoData = await videoRes.json();
+
+        const best = videoData.results.find(v => v.type === "Trailer" && v.site === "YouTube")
+                || videoData.results.find(v => v.type === "Teaser" && v.site === "YouTube")
+                || videoData.results.find(v => v.site === "YouTube");
+
+        return best ? best.key : null;
+    } catch {
+        return null;
+    }
+}
+
+// 🎬 FINAL HANDLER
+window.toggleTrailer = async (show, title, imdbID) => {
+    const modal = document.getElementById('video-modal');
+    const container = document.getElementById('video-container');
+    const iframe = document.getElementById('video-iframe');
+    const titleEl = document.getElementById('video-title');
+
+    if (!show) {
+        container.classList.remove('scale-100', 'opacity-100');
+        container.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => { modal.classList.add('hidden'); iframe.src = ''; }, 300);
+        return;
+    }
+
+    modal.classList.remove('hidden');
+    titleEl.innerText = title ?? "";
+    setTimeout(() => {
+        container.classList.remove('scale-95', 'opacity-0');
+        container.classList.add('scale-100', 'opacity-100');
+    }, 10);
+
+    try {
+        // 1️⃣ Try TMDB First
+        let key = await getTMDBTrailer(imdbID || title, imdbID ? 'imdb' : 'query');
+
+        // 2️⃣ If TMDB fails → Ask YouTube API
+        if (!key) key = await getYouTubeTrailer(title);
+
+        if (key) {
+            iframe.src = `https://www.youtube.com/embed/${key}?autoplay=1&rel=0&modestbranding=1&playsinline=1`;
+        } else {
+            throw new Error("NO TRAILER ANYWHERE");
+        }
+    } catch (err) {
+        // 3️⃣ Last fallback → Open YouTube search
+        toggleTrailer(false);
+        const query = encodeURIComponent(title + " official trailer");
+        window.open(`https://www.youtube.com/results?search_query=${query}`, "_blank");
+    }
+};
+
 
         window.handleAiDeepDive = async (title) => {
             const btn = document.getElementById('ai-deep-dive-btn');
