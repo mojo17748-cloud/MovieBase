@@ -171,7 +171,7 @@
                 <!-- MOBILE & DESKTOP CTAS -->
                 <div class="flex flex-col md:flex-row flex-wrap gap-3 md:gap-5">
                     <button onclick="scrollToContent()" class="bg-pink-600 text-white px-6 md:px-10 py-4 rounded-full font-black flex items-center justify-center gap-3 hover:bg-pink-500 transition shadow-2xl shadow-pink-500/40 active:scale-95 text-sm md:text-base w-full md:w-auto">
-                        <i data-lucide="play" size="20" fill="white"></i> START EXPLORING
+                        <i data-lucide="play" size="20" fill="white"></i> START WATCHING
                     </button>
                     <!-- NEW WATCHLIST BUTTON IN HERO -->
                     <button onclick="openWatchlist()" class="bg-white/10 backdrop-blur-md text-white px-6 md:px-10 py-4 rounded-full font-bold flex items-center justify-center gap-3 hover:bg-white/20 transition border border-white/10 text-sm md:text-base w-full md:w-auto">
@@ -266,12 +266,7 @@
                     <i data-lucide="x" size="20"></i>
                 </button>
             </div>
-            <iframe id="video-iframe" class="w-full h-full"
-        frameborder="0"
-        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-        allowfullscreen>
-</iframe>
-
+            <iframe id="video-iframe" class="w-full h-full" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
         </div>
     </div>
 
@@ -280,7 +275,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
+
         const TMDB_KEY = "c35578514ce47f1bf11cabb3c93cc6a0";
         const OMDB_API_KEY = "fd749bd1";
         const GEMINI_API_KEY = "AIzaSyA0FBoGCUsuzRl8OVSx2vbTJsc5Sa-sWq8";
@@ -408,13 +403,11 @@
             if (!btn) return;
             const isWatchlisted = watchlist[currentModalMovieId];
             const icon = btn.querySelector('svg');
-            const textSpan = btn.querySelector('span'); // Get span for text
             
             if (isWatchlisted) {
                 btn.classList.remove('text-white', 'border-white/10');
                 btn.classList.add('text-pink-500', 'border-pink-500/50', 'bg-pink-500/10');
                 if (icon) icon.setAttribute('fill', 'currentColor');
-                // Use span to update only text, preserve icon if possible or recreate innerHTML
                 btn.innerHTML = `<i data-lucide="bookmark" size="20" fill="currentColor" class="text-pink-500"></i><span>IN WATCHLIST</span>`;
             } else {
                 btn.classList.add('text-white', 'border-white/10');
@@ -552,7 +545,7 @@
                         
                         <!-- UNIFIED ACTION BAR -->
                         <div class="flex flex-col sm:flex-row gap-4 mb-8 md:mb-10">
-                            <button onclick="toggleTrailer(true, '${movie.Title}')" class="flex-1 bg-pink-600 text-white font-black py-4 px-6 rounded-xl hover:bg-pink-500 transition shadow-xl shadow-pink-500/20 active:scale-95 flex items-center justify-center gap-3">
+                            <button onclick="toggleTrailer(true, '${movie.Title}', '${movie.imdbID}')" class="flex-1 bg-pink-600 text-white font-black py-4 px-6 rounded-xl hover:bg-pink-500 transition shadow-xl shadow-pink-500/20 active:scale-95 flex items-center justify-center gap-3">
                                 <i data-lucide="play" size="20" fill="white"></i> 
                                 <span>WATCH TRAILER</span>
                             </button>
@@ -582,69 +575,87 @@
             lucide.createIcons();
         };
 
+        // --- TRAILER FETCH HELPER ---
+        async function getTrailerVideoId(term, type = 'query') {
+            try {
+                let movieId = null;
 
-        async function getTrailerVideoId(title) {
-    const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(title)}`;
+                if (type === 'imdb' && term) {
+                     const findUrl = `https://api.themoviedb.org/3/find/${term}?api_key=${TMDB_KEY}&external_source=imdb_id`;
+                     const res = await fetch(findUrl);
+                     if(res.ok) {
+                         const data = await res.json();
+                         if (data.movie_results && data.movie_results.length > 0) {
+                             movieId = data.movie_results[0].id;
+                         }
+                     }
+                }
+                
+                // Fallback to title search if imdb lookup failed or wasn't used
+                if (!movieId) {
+                    const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(term)}`;
+                    const res = await fetch(searchUrl);
+                    if (!res.ok) throw new Error('TMDB Search Failed');
+                    const data = await res.json();
+                    if (!data.results || !data.results.length) return null;
+                    movieId = data.results[0].id;
+                }
 
-    const res = await fetch(searchUrl);
-    const data = await res.json();
+                if (!movieId) return null;
 
-    if (!data.results || !data.results.length) return null;
+                const videoUrl = `https://api.themoviedb.org/3/movie/${movieId}/videos?api_key=${TMDB_KEY}`;
+                const videoRes = await fetch(videoUrl);
+                if (!videoRes.ok) throw new Error('TMDB Video Failed');
+                const videoData = await videoRes.json();
 
-    const movieId = data.results[0].id;
-
-    const videoUrl = `https://api.themoviedb.org/3/movie/${movieId}/videos?api_key=${TMDB_KEY}`;
-    const videoRes = await fetch(videoUrl);
-    const videoData = await videoRes.json();
-
-    const trailer = videoData.results.find(v => v.type === "Trailer" && v.site === "YouTube");
-    return trailer ? trailer.key : null;
-}
-
-
-
-
-        window.toggleTrailer = async (show, title) => {
-    const modal = document.getElementById('video-modal');
-    const container = document.getElementById('video-container');
-    const iframe = document.getElementById('video-iframe');
-    const titleEl = document.getElementById('video-title');
-
-    if (show) {
-        modal.classList.remove('hidden');
-        if (title) titleEl.innerText = title;
-
-        setTimeout(() => {
-            container.classList.remove('scale-95', 'opacity-0');
-            container.classList.add('scale-100', 'opacity-100');
-        }, 10);
-
-        try {
-            const vid = await getTrailerVideoId(title);
-            if (!vid) {
-                alert("No trailer found 😓");
-                return;
+                const trailer = videoData.results.find(v => v.type === "Trailer" && v.site === "YouTube") 
+                             || videoData.results.find(v => v.site === "YouTube"); 
+                return trailer ? trailer.key : null;
+            } catch (e) {
+                console.warn("Trailer fetch issue (using fallback):", e.message);
+                return null;
             }
-
-            iframe.src = `https://www.youtube.com/embed/${vid}?autoplay=1&mute=1&controls=1&playsinline=1&rel=0&modestbranding=1`;
-
-        } catch (err) {
-            console.error(err);
-            alert("Trailer unavailable right now.");
         }
 
-    } else {
-        container.classList.remove('scale-100', 'opacity-100');
-        container.classList.add('scale-95', 'opacity-0');
-        setTimeout(() => {
-            modal.classList.add('hidden');
-            iframe.src = '';
-        }, 300);
-    }
-};
+        window.toggleTrailer = async (show, title, imdbID) => {
+            const modal = document.getElementById('video-modal');
+            const container = document.getElementById('video-container');
+            const iframe = document.getElementById('video-iframe');
+            const titleEl = document.getElementById('video-title');
+            
+            if (show) {
+                modal.classList.remove('hidden');
+                if(title) titleEl.innerText = title;
+                
+                // Animation
+                setTimeout(() => {
+                    container.classList.remove('scale-95', 'opacity-0');
+                    container.classList.add('scale-100', 'opacity-100');
+                }, 10);
 
-;
-
+                // Default Fallback
+                let videoSrc = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(title + ' official trailer')}&autoplay=1`;
+                
+                try {
+                    // Prefer IMDB ID lookup if available, else Title
+                    const videoId = await getTrailerVideoId(imdbID || title, imdbID ? 'imdb' : 'query');
+                    if (videoId) {
+                        videoSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+                    }
+                } catch (e) {
+                    console.warn("Falling back to search embed");
+                }
+                
+                iframe.src = videoSrc;
+            } else {
+                container.classList.remove('scale-100', 'opacity-100');
+                container.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                    iframe.src = '';
+                }, 300);
+            }
+        };
 
         window.handleAiDeepDive = async (title) => {
             const btn = document.getElementById('ai-deep-dive-btn');
