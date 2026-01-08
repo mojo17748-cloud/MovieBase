@@ -324,6 +324,7 @@
         let sortOrder = "newest";
         let currentModalMovieId = null;
         let currentTrailerTitle = "";
+        let trailerTimeout = null;
 
         const initAuth = async () => { await signInAnonymously(auth); };
 
@@ -562,7 +563,8 @@
                         
                         <!-- UNIFIED ACTION BAR -->
                         <div class="flex flex-col sm:flex-row gap-4 mb-8 md:mb-10">
-                            <button onclick="toggleTrailer(true, '${movie.Title}')" class="flex-1 bg-pink-600 text-white font-black py-4 px-6 rounded-xl hover:bg-pink-500 transition shadow-xl shadow-pink-500/20 active:scale-95 flex items-center justify-center gap-3">
+                            <!-- MODIFIED: Use data-title attribute to safely handle quotes in movie titles -->
+                            <button onclick="toggleTrailer(true, this.getAttribute('data-title'))" data-title="${movie.Title.replace(/"/g, '&quot;')}" class="flex-1 bg-pink-600 text-white font-black py-4 px-6 rounded-xl hover:bg-pink-500 transition shadow-xl shadow-pink-500/20 active:scale-95 flex items-center justify-center gap-3">
                                 <i data-lucide="play" size="20" fill="white"></i> 
                                 <span>WATCH TRAILER</span>
                             </button>
@@ -618,6 +620,9 @@
             loader.classList.remove('hidden');
             iframe.classList.add('opacity-0');
             
+            // Clear any existing timeout from previous attempts
+            if (trailerTimeout) clearTimeout(trailerTimeout);
+            
             const searchTerm = language === 'Official' 
                 ? `${title} Official Trailer` 
                 : `${title} ${language} Official Trailer`;
@@ -640,8 +645,12 @@
             if (videoId) {
                 iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`;
             } else {
-                alert("Trailer not found.");
-                loader.classList.add('hidden');
+                // FALLBACK: Wait 10 seconds (10000ms), then redirect to YouTube search results
+                trailerTimeout = setTimeout(() => {
+                    const ytUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTerm)}`;
+                    window.open(ytUrl, '_blank');
+                    toggleTrailer(false); // Close modal
+                }, 10000);
             }
         }
 
@@ -673,6 +682,9 @@
                 loadTrailer(title, 'Official');
 
             } else {
+                // Cancel redirect if closed early
+                if (trailerTimeout) clearTimeout(trailerTimeout);
+                
                 container.classList.remove('scale-100', 'opacity-100');
                 container.classList.add('scale-95', 'opacity-0');
                 setTimeout(() => {
