@@ -580,6 +580,7 @@
             try {
                 let movieId = null;
 
+                // 1. Try to find TMDB ID using IMDb ID (more accurate)
                 if (type === 'imdb' && term) {
                      const findUrl = `https://api.themoviedb.org/3/find/${term}?api_key=${TMDB_KEY}&external_source=imdb_id`;
                      const res = await fetch(findUrl);
@@ -591,7 +592,7 @@
                      }
                 }
                 
-                // Fallback to title search if imdb lookup failed or wasn't used
+                // 2. Fallback to Title Search if no IMDb ID provided or lookup failed
                 if (!movieId) {
                     const searchUrl = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(term)}`;
                     const res = await fetch(searchUrl);
@@ -603,13 +604,17 @@
 
                 if (!movieId) return null;
 
+                // 3. Get Videos for the Movie
                 const videoUrl = `https://api.themoviedb.org/3/movie/${movieId}/videos?api_key=${TMDB_KEY}`;
                 const videoRes = await fetch(videoUrl);
                 if (!videoRes.ok) throw new Error('TMDB Video Failed');
                 const videoData = await videoRes.json();
 
+                // 4. Filter for Youtube Trailer (Prefer 'Trailer', then 'Teaser', then any YouTube video)
                 const trailer = videoData.results.find(v => v.type === "Trailer" && v.site === "YouTube") 
+                             || videoData.results.find(v => v.type === "Teaser" && v.site === "YouTube")
                              || videoData.results.find(v => v.site === "YouTube"); 
+                
                 return trailer ? trailer.key : null;
             } catch (e) {
                 console.warn("Trailer fetch issue (using fallback):", e.message);
@@ -624,6 +629,7 @@
             const titleEl = document.getElementById('video-title');
             
             if (show) {
+                // Show modal immediately for UI responsiveness
                 modal.classList.remove('hidden');
                 if(title) titleEl.innerText = title;
                 
@@ -633,25 +639,29 @@
                     container.classList.add('scale-100', 'opacity-100');
                 }, 10);
 
-                // Default Fallback: open YouTube search
-let videoSrc = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' official trailer')}`;
-
-try {
-    const videoId = await getTrailerVideoId(imdbID || title, imdbID ? 'imdb' : 'query');
-    if (videoId) {
-        videoSrc = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&playsinline=1&modestbranding=1`;
-    }
-} catch (e) {
-    console.warn("Falling back to YouTube search");
-}
-
-// Set source + failback
-iframe.src = videoSrc;
-iframe.onerror = () => {
-    iframe.src = `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' official trailer')}`;
-};
-
+                // Try to get video ID
+                try {
+                    const videoId = await getTrailerVideoId(imdbID || title, imdbID ? 'imdb' : 'query');
+                    
+                    if (videoId) {
+                        // Success: Play Video
+                        iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1`;
+                    } else {
+                        // Failure: Throw to catch block
+                        throw new Error("No trailer found");
+                    }
+                } catch (e) {
+                    console.warn("Falling back to YouTube Search:", e.message);
+                    
+                    // Close the modal as we are leaving the app context
+                    toggleTrailer(false);
+                    
+                    // Redirect to YouTube Search
+                    const query = encodeURIComponent((title || "") + " official trailer");
+                    window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank');
+                }
             } else {
+                // Close Logic
                 container.classList.remove('scale-100', 'opacity-100');
                 container.classList.add('scale-95', 'opacity-0');
                 setTimeout(() => {
@@ -659,7 +669,6 @@ iframe.onerror = () => {
                     iframe.src = '';
                 }, 300);
             }
-            
         };
 
         window.handleAiDeepDive = async (title) => {
