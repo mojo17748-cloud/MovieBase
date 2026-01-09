@@ -275,14 +275,8 @@
                 <!-- Iframe -->
                 <iframe id="video-iframe" class="relative z-10 w-full h-full opacity-0 transition-opacity duration-500" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen onload="this.classList.remove('opacity-0'); document.getElementById('video-loader').classList.add('hidden')"></iframe>
             </div>
-
-            <!-- Language Selector Bar -->
-            <div class="bg-[#121212] border-t border-white/10 p-3 md:p-4">
-                <h4 class="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Select Language Trailer</h4>
-                <div id="language-chips" class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-                    <!-- Chips injected via JS -->
-                </div>
-            </div>
+            
+            <!-- REMOVED LANGUAGE BAR -->
         </div>
     </div>
 
@@ -294,7 +288,7 @@
 
         const YT_KEY = "AIzaSyDRU7Jah9Wwda5MKtxgFr_NYLQqyycNVWU"; // YouTube Key
         const OMDB_API_KEY = "fd749bd1";
-        const GEMINI_API_KEY = "AIzaSyA0FBoGCUsuzRl8OVSx2vbTJsc5Sa-sWq8";
+        const GEMINI_API_KEY = "AIzaSyDRU7Jah9Wwda5MKtxgFr_NYLQqyycNVWU";
         const BASE_URL = "https://www.omdbapi.com/";
         const INITIAL_QUERY = "MARVEL";
         
@@ -469,14 +463,34 @@
         };
 
         const callGemini = async (prompt) => {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
-            try {
-                const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
-                if (!response.ok) throw new Error('API Error');
-                const data = await response.json();
-                return data.candidates?.[0]?.content?.parts?.[0]?.text;
-            } catch (err) { console.error(err); throw err; }
-        };
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [
+                    {
+                        parts: [{ text: prompt }]
+                    }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.text();
+            console.error(err);
+            throw new Error('API Error');
+        }
+
+        const data = await response.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text;
+    } catch (err) {
+        console.error('Gemini failed:', err);
+        throw err;
+    }
+};
+
 
         const fetchMovies = async (query, pageNum, isNew = false) => {
             if (isLoading) return;
@@ -611,7 +625,7 @@
             }
         }
 
-        async function loadTrailer(title, language) {
+        async function loadTrailer(title) {
             const iframe = document.getElementById('video-iframe');
             const loader = document.getElementById('video-loader');
             const videoTitle = document.getElementById('video-title');
@@ -623,22 +637,8 @@
             // Clear any existing timeout from previous attempts
             if (trailerTimeout) clearTimeout(trailerTimeout);
             
-            const searchTerm = language === 'Official' 
-                ? `${title} Official Trailer` 
-                : `${title} ${language} Official Trailer`;
-            
+            const searchTerm = `${title} Official Trailer`;
             videoTitle.innerText = searchTerm;
-
-            // Highlight Active Chip
-            document.querySelectorAll('.lang-chip').forEach(chip => {
-                if(chip.innerText === language || (language === 'Official' && chip.innerText === 'General')) {
-                    chip.classList.add('bg-pink-600', 'text-white', 'border-pink-600');
-                    chip.classList.remove('bg-white/5', 'text-gray-400', 'border-white/5');
-                } else {
-                    chip.classList.remove('bg-pink-600', 'text-white', 'border-pink-600');
-                    chip.classList.add('bg-white/5', 'text-gray-400', 'border-white/5');
-                }
-            });
 
             const videoId = await searchYouTube(searchTerm);
             
@@ -658,7 +658,6 @@
             const modal = document.getElementById('video-modal');
             const container = document.getElementById('video-container');
             const iframe = document.getElementById('video-iframe');
-            const chipsContainer = document.getElementById('language-chips');
             
             if (show) {
                 currentTrailerTitle = title;
@@ -670,16 +669,8 @@
                     container.classList.add('scale-100', 'opacity-100');
                 }, 10);
 
-                // Render Language Chips
-                const languages = ['Official', 'Hindi', 'Telugu', 'Tamil', 'Kannada', 'Malayalam', 'English'];
-                chipsContainer.innerHTML = languages.map(lang => `
-                    <button onclick="window.handleLanguageChange('${lang}')" class="lang-chip px-4 py-2 rounded-full text-xs font-bold border transition shrink-0 uppercase tracking-wider ${lang === 'Official' ? 'bg-pink-600 text-white border-pink-600' : 'bg-white/5 text-gray-400 border-white/5 hover:bg-white/10 hover:text-white'}">
-                        ${lang === 'Official' ? 'General' : lang}
-                    </button>
-                `).join('');
-
                 // Load Default Trailer
-                loadTrailer(title, 'Official');
+                loadTrailer(title);
 
             } else {
                 // Cancel redirect if closed early
@@ -693,10 +684,6 @@
                     document.getElementById('video-loader').classList.remove('hidden');
                 }, 300);
             }
-        };
-
-        window.handleLanguageChange = (lang) => {
-            if(currentTrailerTitle) loadTrailer(currentTrailerTitle, lang);
         };
 
         window.handleAiDeepDive = async (title) => {
@@ -797,4 +784,3 @@
     </script>
 </body>
 </html>
-
